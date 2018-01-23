@@ -18,7 +18,8 @@ contract DistributionMiddleware {
 
 	//Events
 	event Deposit(address _sender, uint amount);
-	event Divvy(address _sender);
+	event Divvy(address _sender, uint amount);
+	event StakeHolderAdded(address stakeHolderAddress, string nameOfStakeHolder);
 
 	//Function Modifiers
 	modifier isOwner(){
@@ -43,14 +44,15 @@ contract DistributionMiddleware {
 	}
 
 	/** @dev Adds a stakeholder 
-	* @param address _address
-	* @param string _name Chosen name of the stakeholder
+	* @param _address Stakeholder wallet address
+	* @param _name Chosen name of the stakeholder
 	 */
 	function addStakeHolder(address _address, string _name) public isOwner {
 		require(!stakeHolders[_address].isEnabled);
 		addressIndices.push(_address);
 		stakeHolders[_address].name = _name;
 		stakeHolders[_address].isEnabled = true;
+		StakeHolderAdded(_address, _name);
 	}
 
 	/** @dev Divvies up all the balance inside the contract with current stakeholders.
@@ -58,18 +60,18 @@ contract DistributionMiddleware {
 	 */
 	function divvyUp() public isStakeHolder {
 		require(this.balance > 0);
+		Divvy(msg.sender, this.balance);
 		uint divvy = SafeMath.div(this.balance,addressIndices.length);
-		uint totalShared = divvy * addressIndices.length;
+		uint totalShared = SafeMath.mul(divvy, addressIndices.length);
 		for(uint i = 0; i < addressIndices.length; i++) {
 			addressIndices[i].send(divvy);
 			stakeHolders[addressIndices[i]].lifeTimeEarnings += divvy;
 		} 
 		if(this.balance > 0) {
 			uint randomWinner = getRandomNumber(addressIndices.length);
-			addressIndices[randomWinner].send(this.balance - totalShared);
-			stakeHolders[addressIndices[randomWinner]].lifeTimeEarnings += this.balance - totalShared;
+			stakeHolders[addressIndices[randomWinner]].lifeTimeEarnings += this.balance;
+			addressIndices[randomWinner].send(this.balance);
 		}
-		Divvy(msg.sender);
 	}
 
 	/** @dev Default function. Add divvyUp() inside here to divvy all the incoming eth when they arrive 
@@ -79,8 +81,8 @@ contract DistributionMiddleware {
 	}
 
 	/** @dev Outputs a "random" number between 0 and max 
-	* @param uint max Max number in the range
-	* @return uint randomNumber
+	* @param max Max number in the range
+	* @return randomNumber
 	 */
 	function getRandomNumber(uint max) private constant returns(uint randomNumber) {
 		return uint(keccak256(block.timestamp))%max;
@@ -89,19 +91,19 @@ contract DistributionMiddleware {
 	/* Getters */
 
 	/** @dev Outputs the count of how many stakeholders there are 
-	* @return uint stakeHolderCount
+	* @return stakeHolderCount
 	 */
 	function getStakeHolderCount() public constant isStakeHolder returns(uint stakeHolderCount) {
 		return addressIndices.length;
 	}
 
 	/** @dev Outputs stakeholder information by name 
-	* @param string _name The name of the stakeholder
-	* @return uint lifeTimeEarnings
-	* @return string name
-	* @return address _address
+	* @param _name The name of the stakeholder
+	* @return lifeTimeEarnings
+	* @return name
+	* @return stakeHolderAddress
 	 */
-	function getStakeHolderWithName(string _name) public constant returns(uint lifeTimeEarnings,string name,address _address) {
+	function getStakeHolderWithName(string _name) public constant returns(uint lifeTimeEarnings,string name,address stakeHolderAddress) {
 		for(uint i = 0; i < addressIndices.length; i++) {
 			if(keccak256(stakeHolders[addressIndices[i]].name) == keccak256(_name)) {
 				return (stakeHolders[addressIndices[i]].lifeTimeEarnings, stakeHolders[addressIndices[i]].name, addressIndices[i]);
@@ -110,23 +112,23 @@ contract DistributionMiddleware {
 	}
 	
 	/** @dev Outputs nth stakeholder information 
-	* @param uint nth
-	* @return uint lifeTimeEarnings
-	* @return string name
-	* @return address _address
+	* @param nth Stakeholder at this position
+	* @return lifeTimeEarnings
+	* @return name
+	* @return stakeHolderAddress
 	 */
-	function getStakeHolderAtPosition(uint nth) public constant isStakeHolder returns(uint lifeTimeEarnings,string name,address _address) {
-		require(i < addressIndices.length);
+	function getStakeHolderAtPosition(uint nth) public constant isStakeHolder returns(uint lifeTimeEarnings,string name,address stakeHolderAddress) {
+		require(nth < addressIndices.length);
 		return(stakeHolders[addressIndices[nth]].lifeTimeEarnings, stakeHolders[addressIndices[nth]].name, addressIndices[nth]);
 	}
 
 	/** @dev Outputs stakeholder information by address 
-	* @param address _address
-	* @return uint lifeTimeEarnings
-	* @return string name
-	* @return address _address
+	* @param _address Search Address
+	* @return lifeTimeEarnings
+	* @return name
+	* @return stakeHolderAddress
 	 */
-	function getStakeHolderWithAddress(address _address) public constant returns(uint lifeTimeEarnings,string name,address _address) {
+	function getStakeHolderWithAddress(address _address) public constant returns(uint lifeTimeEarnings,string name,address stakeHolderAddress) {
 		for(uint i = 0; i < addressIndices.length; i++) {
 			if(addressIndices[i] == _address) {
 				return (stakeHolders[addressIndices[i]].lifeTimeEarnings, stakeHolders[addressIndices[i]].name, addressIndices[i]);
@@ -135,8 +137,8 @@ contract DistributionMiddleware {
 	}
 
 	/** @dev Outputs the sum of lifetime earnings of stakeholders
-	* @return uint sumOfLifeTimeEarnings
-	* @return uint contractBalance
+	* @return sumOfLifeTimeEarnings
+	* @return contractBalance
 	 */
 	function getBalances() public constant isStakeHolder returns(uint sumOfLifeTimeEarnings, uint contractBalance) {
 		uint totalStakeHolderBalance = 0;
